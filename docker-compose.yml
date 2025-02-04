@@ -1,0 +1,79 @@
+services:
+    app:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile
+        restart: unless-stopped
+        container_name: avia-serve-order-app
+        working_dir: /var/www
+        volumes:
+            - ./:/var/www
+            - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+        networks:
+            - avia-serve
+            - avia-serve-data
+        depends_on:
+            - pgsql
+            - redis
+            - webserver
+
+    webserver:
+        image: nginx:alpine
+        restart: unless-stopped
+        container_name: avia-serve-order-webserver
+        ports:
+            - '8084:80'
+        volumes:
+            - ./:/var/www
+            - ./docker/nginx/conf.d/:/etc/nginx/conf.d/
+        networks:
+            - avia-serve
+        depends_on:
+            - pgsql
+            - redis
+
+    pgsql:
+        image: postgres:16
+        container_name: avia-serve-order-pgsql
+        ports: # Dev only
+            - '5404:5432'
+        environment:
+            PGPASSWORD: '${DB_PASSWORD:-secret}'
+            POSTGRES_DB: '${DB_DATABASE}'
+            POSTGRES_USER: '${DB_USERNAME}'
+            POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
+        restart: unless-stopped
+        networks:
+            - avia-serve-data
+        volumes:
+            - db-data:/var/lib/postgresql/data
+        healthcheck:
+            test: [ 'CMD', 'pg_isready', '-q', '-d', '${DB_DATABASE}', '-U', '${DB_USERNAME}' ]
+            retries: 3
+            timeout: 5s
+
+    redis:
+        image: redis:alpine
+        container_name: avia-serve-order-redis
+        restart: unless-stopped
+        volumes:
+            - cache-data:/data
+        networks:
+            - avia-serve-data
+        healthcheck:
+            test: [ 'CMD', 'redis-cli', 'ping' ]
+            retries: 3
+            timeout: 5s
+
+networks:
+    avia-serve:
+        name: avia-serve
+        external: true
+    avia-serve-data:
+        driver: bridge
+
+volumes:
+    db-data:
+        driver: local
+    cache-data:
+        driver: local
